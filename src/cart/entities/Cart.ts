@@ -10,7 +10,7 @@ import {
 } from 'typeorm';
 
 import { CartItems } from './CartItems';
-import { Users } from 'src/users/entity/Users';
+import { Users } from 'src/users/entities/Users';
 
 @Entity('carts')
 export class Carts {
@@ -28,7 +28,7 @@ export class Carts {
   items: CartItems[];
 
   @CreateDateColumn({ type: 'timestamp', nullable: false })
-  created_at: Date;
+  created_at: string;
 
   @UpdateDateColumn({ type: 'timestamp', nullable: false })
   updated_at: Date;

@@ -3,8 +3,8 @@ import { Injectable } from '@nestjs/common';
 // import { v4 } from 'uuid';
 
 // import { Cart } from '../models';
-import { Carts } from '../entity/Carts';
-import { CartItems } from '../entity/CartItems';
+import { Carts } from '../entities/Cart';
+import { CartItems } from '../entities/CartItems';
 import { Repository } from 'typeorm';
 import { InjectRepository } from '@nestjs/typeorm';
 
