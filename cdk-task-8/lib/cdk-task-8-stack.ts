@@ -20,6 +20,7 @@ export class CdkTask8Stack extends cdk.Stack {
       functionName: 'cartService',
       entry: '../dist/main.js',
       environment,
+      timeout: cdk.Duration.seconds(5),
       bundling: {
         externalModules: [
           'mysql',

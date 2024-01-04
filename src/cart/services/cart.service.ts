@@ -1,23 +1,25 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
-import { Cart, CartItem  } from '../models';
+import { Injectable } from '@nestjs/common';
+import { Cart, CartStatus } from '../models';
 // import { Carts } from '../entities/Cart';
 // import { CartItems } from '../entities/CartItems';
 // import { Repository } from 'typeorm';
 // import { InjectRepository } from '@nestjs/typeorm';
 // import { v4 } from 'uuid';
 import { UpdateUserCartDTO } from '../dto/update-user-cart.dto';
+import { Knex } from 'knex';
 import pgClient from '../../db';
 
 @Injectable()
 export class CartService {
-  private userCarts: Record<string, Cart> = {};
-
-  async findByUserId(userId: string): Promise<Cart> {
+  async findByUserId(userId: string, status = CartStatus.OPEN): Promise<Cart> {
     if (!userId) {
       return null;
     }
 
-    const cart = await pgClient('carts').where('user_id', userId).first();
+    const cart = await pgClient('carts')
+      .where('user_id', userId)
+      .where('status', status)
+      .first();
 
     if (!cart) {
       return null;
@@ -133,5 +135,20 @@ export class CartService {
     await pgClient.transaction(async (trx) => {
       await trx('carts').where('carts.user_id', userId).del();
     });
+  }
+
+  async createTransaction() {
+    return await pgClient.transaction();
+  }
+
+  async changeCartStatusTransacted(
+    trx: Knex.Transaction<any, any[]>,
+    cartId: string,
+    status = CartStatus.ORDERED,
+  ) {
+    return await trx('carts')
+      .where('carts.id', cartId)
+      .update({ status })
+      .returning('status');
   }
 }

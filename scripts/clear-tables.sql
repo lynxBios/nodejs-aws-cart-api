@@ -8,6 +8,7 @@ DELETE FROM cart_items;
 DELETE FROM orders;
 DELETE FROM carts;
 DELETE FROM users;
+DELETE FROM products;
 
 -- Enable foreign key checks again
 SET CONSTRAINTS ALL IMMEDIATE;

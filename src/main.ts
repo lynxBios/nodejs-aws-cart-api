@@ -10,15 +10,32 @@ import { AppModule } from './app.module';
 //const port = process.env.PORT || 4000;
 let server: Handler;
 
+const origWarning = process.emitWarning;
+
+process.emitWarning = function (...args) {
+  const error = new Error();
+  console.warn(`Deprecation Warning: ${args[1]}\n${error.stack}`);
+  return origWarning.apply(process, args);
+};
+
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+process.on('uncaughtException', (error) => {
+  console.error('Uncaught Exception:', error);
+  process.exit(1);
+});
+
 async function bootstrap(): Promise<Handler>  {
   const app = await NestFactory.create(AppModule, {
     cors: true,
     logger: ['log', 'error', 'warn', 'debug', 'verbose'],
   });
 
-  // app.enableCors({
-  //   origin: (req, callback) => callback(null, true),
-  // });
+  app.enableCors({
+    origin: (req, callback) => callback(null, true),
+  });
 
   app.useGlobalPipes(
     new ValidationPipe({
