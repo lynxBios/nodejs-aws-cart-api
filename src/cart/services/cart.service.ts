@@ -1,136 +1,137 @@
-import { Injectable } from '@nestjs/common';
-
+import { Injectable, NotFoundException } from '@nestjs/common';
+import { Cart, CartItem  } from '../models';
+// import { Carts } from '../entities/Cart';
+// import { CartItems } from '../entities/CartItems';
+// import { Repository } from 'typeorm';
+// import { InjectRepository } from '@nestjs/typeorm';
 // import { v4 } from 'uuid';
-
-// import { Cart } from '../models';
-import { Carts } from '../entities/Cart';
-import { CartItems } from '../entities/CartItems';
-import { Repository } from 'typeorm';
-import { InjectRepository } from '@nestjs/typeorm';
+import { UpdateUserCartDTO } from '../dto/update-user-cart.dto';
+import pgClient from '../../db';
 
 @Injectable()
 export class CartService {
-  // private userCarts: Record<string, Cart> = {};
+  private userCarts: Record<string, Cart> = {};
 
-  // findByUserId(userId: string): Cart {
-  //   return this.userCarts[ userId ];
-  constructor(
-    @InjectRepository(Carts)
-    private cartsRepository: Repository<Carts>,
+  async findByUserId(userId: string): Promise<Cart> {
+    if (!userId) {
+      return null;
+    }
 
-    @InjectRepository(CartItems)
-    private cartItemsRepository: Repository<CartItems>,
-  ) {}
+    const cart = await pgClient('carts').where('user_id', userId).first();
 
-  async findByUserId(userId: string): Promise<Carts> {
-    return await this.cartsRepository.findOne({
-      relations: {
-        items: true,
+    if (!cart) {
+      return null;
+    }
+    const cartItems = await pgClient('cart_items')
+      .select(
+        'cart_items.product_id',
+        'cart_items.count',
+        'products.id',
+        'products.title',
+        'products.description',
+        'products.price',
+      )
+      .join('products', 'cart_items.product_id', 'products.id')
+      .where('cart_items.cart_id', cart.id);
+    const productsData = cartItems.map((item) => ({
+      product: {
+        id: item.product_id,
+        title: item.title,
+        description: item.description,
+        price: item.price,
       },
-      where: { user_id: userId, status: 'OPEN' },
-    });
+      count: item.count,
+    }));
+
+    cart.items = productsData;
+
+    return cart;
   }
 
-  // createByUserId(userId: string) {
-  //   const id = v4();
-  //   const userCart = {
-  //     id,
-  async createByUserId(userId: string) {
-    return await this.cartsRepository.save({
+  async createByUserId(userId: string): Promise<Cart> {
+    const userCart = {
       user_id: userId,
-      items: [],
-    // };
+    };
 
-    // this.userCarts[ userId ] = userCart;
-
-    // return userCart;
-    });
+    return (await pgClient('carts')
+      .insert(userCart)
+      .returning('*')) as any as Cart;
   }
 
-  // findOrCreateByUserId(userId: string): Cart {
-  //   const userCart = this.findByUserId(userId);
-  async findOrCreateByUserId(userId: string): Promise<Carts> {
+  async findOrCreateByUserId(userId: string): Promise<Cart> {
     const userCart = await this.findByUserId(userId);
 
     if (userCart) {
       return userCart;
     }
 
-    return this.createByUserId(userId);
+    const newCartUserId = userId;
+    const newUserCart = (await this.createByUserId(newCartUserId))[0];
+
+    newUserCart.items = [];
+
+    return newUserCart;
   }
 
-  // updateByUserId(userId: string, { items }: Cart): Cart {
-  //   const { id, ...rest } = this.findOrCreateByUserId(userId);
+  async updateByUserId(
+    userId: string,
+    updateUserCartDTO: UpdateUserCartDTO,
+  ): Promise<Cart> {
+    const { id, items, ...rest } = (await this.findOrCreateByUserId(
+      userId,
+    )) as any as Cart;
 
-  //   const updatedCart = {
-  //     id,
-  //     ...rest,
-  //     items: [ ...items ],
-  async updateByUserId(userId: string, { product, count }): Promise<Carts> {
-    const { id, ...rest } = await this.findOrCreateByUserId(userId);
-
-    const cartItem = await this.cartItemsRepository.findOne({
-      where: { cart_id: id, product_id: product.id },
-    });
-
-    if (cartItem) {
-      if (count === 0) {
-        await this.cartItemsRepository.delete(cartItem.id);
-        return await this.cartsRepository.findOne({
-          relations: {
-            items: true,
-          },
-          where: { id },
-        });
-      }
-
-      await this.cartItemsRepository.update(cartItem.id, {
-        count: count,
-      });
-
-      return await this.cartsRepository.findOne({
-        relations: {
-          items: true,
-        },
-        where: { id },
-      });
+    if (!id) {
+      return null;
     }
 
-    // this.userCarts[ userId ] = { ...updatedCart };
+    const { product, count } = updateUserCartDTO;
 
-    // return { ...updatedCart };
-    await this.cartItemsRepository.save({
-      cart_id: id,
-      product_id: product.id,
-      price: product.price,
-      count: count,
-    });
+    if (count > 0) {
+      await pgClient('cart_items')
+        .insert({ product_id: product.id, count, cart_id: id })
+        .onConflict(['cart_id', 'product_id'])
+        .merge()
+        .returning('*');
 
-    return await this.cartsRepository.findOne({
-      relations: {
-        items: true,
-      },
-      where: { id },
-    });
+      const { updatedAt } = await pgClient('carts')
+        .select('updated_at')
+        .where('id', id)
+        .first();
+      const updatedCart = {
+        id,
+        ...rest,
+        updatedAt,
+        items: [
+          updateUserCartDTO,
+          ...items.filter((item) => item.product.id !== product.id),
+        ],
+      };
 
-
-  }
-
-  // removeByUserId(userId): void {
-  //   this.userCarts[ userId ] = null;
-  async removeByUserId(userId): Promise<void> {
-    await this.cartsRepository.delete({ user_id: userId });
-  }
-
-  async setOrderStatus(userId: string, status: string): Promise<Carts> {
-    const cart = await this.findByUserId(userId);
-    if (!cart) {
-      throw new Error('Cart does not exist!');
+      return updatedCart;
     }
 
-    return await this.cartsRepository.save({
-      ...cart,
-      status,
+    await pgClient('cart_items')
+      .where({ cart_id: id, product_id: product.id })
+      .del();
+
+    const { updatedAt } = await pgClient('carts')
+      .select('updated_at')
+      .where('id', id)
+      .first();
+    const updatedCart = {
+      id,
+      ...rest,
+      updatedAt,
+      items: [...items.filter((item) => item.product.id !== product.id)],
+    };
+
+    return updatedCart;
+  }
+
+  async removeByUserId(userId: string): Promise<void> {
+    await pgClient.transaction(async (trx) => {
+      await trx('carts').where('carts.user_id', userId).del();
     });
   }
 }
